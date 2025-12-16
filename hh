@@ -1,0 +1,232 @@
+clear;
+selectall;
+delete;
+nm=1e-9;#纳米单位
+um=1e-6;#微米单位
+
+#设置基底的高度和周期
+h_SiO2=200*nm;
+p_SiO2=650*nm;
+
+#添加矩形柱
+addrect;
+set("name","SiO2");#名称
+set("index",1.48); #设置折射率 
+set("x",0);#设置x中心点坐标 
+set("y",0);#设置y中心点坐标
+set("z",0);#设置z中心点坐标，基底中心坐标为坐标原点
+set("x span",p_SiO2);#设置x方向宽度
+set("y span",p_SiO2);#设置y方向宽度
+set("z span",h_SiO2);#设置z方向宽度
+
+#设置上层矩形的高度，宽度和长度
+h_Si=1*um;
+w_Si=50*nm;
+l_Si=50*nm;
+addrect;
+set("name","Si");
+set("index",3.48); #设置折射率
+set("x",0);
+set("y",0*um);
+set("x span",l_Si);#设置x方向宽度
+set("y span",w_Si);#设置y方向宽度
+set("z",h_SiO2/2+h_Si/2);#矩形中心坐标为基底坐标一半+圆柱坐标一半
+set("z span",h_Si);
+#要使用PB相位所以结构设置时要加入旋转角度
+setnamed("Si","first axis","z");#设置旋转轴
+setnamed("Si","rotation 1",0);#设置旋转角度
+
+#添加x偏振光
+size_plane=2*um;
+z_plane=-0.75*um;
+addplane;
+set("name","sources_x");
+set("injection axis","z");#入射轴与z轴平行
+set("direction","forward");#朝向z正方向入射
+set("x",0);
+set("x span",size_plane);
+set("y",0);
+set("y span",size_plane);
+set("z",z_plane);
+set("wavelength start",1500*nm);#波长（最小）
+set("wavelength stop",1500*nm);#波长（最大）
+set("amplitude",1);#振幅，默认为1，无特殊需要可不设置
+set("phase",0);#初始相位，角度制，默认为0，无特殊需要可不设置
+set("angle theta",0);#入射角theta
+set("angle phi",0);#入射角phi
+set("polarization angle",0);#偏振角
+
+#设置仿真区域的最小z值，pml层距离结构至少要半个最大波长
+z_min_fdtd=-1.5*um;
+z_max_fdtd=2*um;
+x_span_fdtd=2*um;
+#添加FDTD仿真区域
+addfdtd;
+set("dimension",2);#仿真区域为三维区域
+set("x",0);
+set("x span",x_span_fdtd);
+set("y",0);
+set("y span",x_span_fdtd);
+set("z min",z_min_fdtd);
+set("z max",z_max_fdtd);
+set("x min bc","periodic");#设置x方向周期边界条件
+set("y min bc","periodic");#设置y方向周期边界条件
+set("Mesh type","auto non-uniform");#仿真网格为自定义方式
+set("Mesh accuracy",6);
+#set("Mesh type","uniform");#仿真网格为自定义方式
+#Mesh_size=0.25*um;
+#setnamed("FDTD","dx",Mesh_size);
+#setnamed("FDTD","dy",Mesh_size);
+#setnamed("FDTD","dz",Mesh_size);
+
+addanalysisgroup;
+set("name","G");
+
+addprofile;
+set("name","T");
+set("monitor type","2D Z-normal");
+set("x",0);
+set("x span",2*um);
+set("y",0);
+set("y span",2*um);
+set("z",1.5*um);
+set("override global monitor settings",1);
+set("frequency points",150);
+addtogroup("G");
+
+#添加点监视器,监视透射光的电场
+addpower;
+set("name","R");
+set("monitor type",1);#1表示点监视器
+set("x",0);
+set("y",0);
+set("z",1.3*um);
+set("override global monitor settings",1);
+set("frequency points",150);
+#添加xz面的面监视器
+addpower;
+set("name","side");
+set("monitor type","2D Y-normal");#xz面监视器需要设置为垂直Y的2D类型
+set("x",0);
+set("x span",2*um);
+set("y",0);
+set("z",0);
+set("z min",-1.5*um);
+set("z max",2*um);
+set("override global monitor settings",1);
+set("frequency points",150);
+#添加xy面的面监视器
+
+#添加时间监视器
+addtime;
+set("name","time");
+run;#运行仿真
+
+
+E=getresult("R","E");#获取点监视器的E
+Ex = pinch(E.Ex);                  # 提取Ex分量并降维
+
+phi_x = angle(Ex);                 # 计算Ex的相位（弧度）
+phi_x = unwrap(phi_x);             # 相位解卷绕，消除2π跳变
+phi_x = phi_x * 180 / pi;          # 转化为角度
+
+lambda = E.lambda;                 # 获取波长数据
+plot(lambda, phi_x, "wavelength(um)", "Phase(°)", "x偏振相位", "linewidth=2");
+
+#添加嵌套扫描，扫描单元结构长度的同时扫描宽度，得到不同长宽下的相位数据
+addsweep;
+setsweep("sweep", "name", "width");
+setsweep("width", "type", "Ranges");
+nosweep = 80;   #扫描的点数
+setsweep("width", "number of points", nosweep); 
+para = struct;
+para.Name = "width";  #扫描的宽1
+para.Parameter = "::model::Si::y span";
+para.Type = "Length";   
+para.Start = 50*nm;   #起始
+para.Stop = 650*nm;   # 终止
+para.Units = "nm";
+addsweepparameter("width", para);
+result_1 = struct;
+result_1.Name = "Ex";
+result_1.Result = "::model::R::Ex";
+
+result_2 = struct;
+result_2.Name = "Ey";
+result_2.Result = "::model::R::Ey";
+
+result_3 = struct;
+result_3.Name = "x_T";
+result_3.Result = "::model::G::x_T";
+
+
+
+addsweepresult("width", result_1);
+addsweepresult("width", result_2);
+addsweepresult("width", result_3);
+
+insertsweep("width");
+
+
+setsweep("sweep", "name", "length");
+setsweep("length", "type", "Ranges");
+nosweep = 80;    #扫描的点数
+setsweep("length", "number of points", nosweep); 
+para = struct;
+para.Name = "length";  #扫描的长1
+para.Parameter = "::model::Si::x span";
+para.Type = "Length";   
+para.Start = 50*nm;    #开始数值
+para.Stop = 650*nm;     # 截至数值
+para.Units = "nm";
+addsweepparameter("length", para);
+
+result_1 = struct;
+result_1.Name = "Ex";
+result_1.Result = "Ex";
+
+result_2 = struct;
+result_2.Name = "Ey";
+result_2.Result = "Ey";
+
+result_3 = struct;
+result_3.Name = "x_T";
+result_3.Result = "x_T";
+addsweepresult("length", result_1);
+addsweepresult("length", result_2);
+addsweepresult("length", result_3);
+
+runsweep("length");
+
+#获取扫描得到的数据，画出相位随频率变化的图（应与前边波长相位随波长变化的图相反）
+sname = "length";
+width1 = getsweepdata(sname,"width");
+length1 = getsweepdata(sname,"length");
+
+Ex = getsweepdata(sname,"Ex");
+Ey = getsweepdata(sname,"Ey");
+n_wavelength = 1; #波长点数（起始波长和终止波长相同）
+n_width1=80;
+n_length1 = 80;
+
+
+E = getresult("R", "E");
+lambda = E.lambda;
+f = E. f;
+
+# 直接使用 Ex 分量（x 线偏振）
+phi_x = angle(Ex);    # 计算 x 偏振的相位
+
+# 嵌套循环进行相位解卷绕
+for(a = 1:n_width) {
+    for(i = 1:n_length) {
+        phi_x(:, a, i) = unwrap(phi_x(:, a, i));
+    }
+}
+
+# 获取 x 偏振的透射率（需要在监视器中预先设置）
+T_x = getsweepdata(sname, "T_x");
+
+#把Ex，Ey，相位，长度，宽度，波长，频率春到matlab文件里
+matlabsave('T_x',T_x,lambda,f);
+matlabsave('T_x',Ex,Ey,phi_x,width,length, lambda,f);
