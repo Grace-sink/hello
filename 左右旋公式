@@ -1,0 +1,35 @@
+metalens_geometry = []
+for i, x in enumerate(r):
+    for j, y in enumerate(r):
+        if x**2 + y**2 <= (length_xy/2)**2:
+            phi_x = phixandtheta(x,y)[0]
+            theta = phixandtheta(x,y)[1]
+            
+            #从11个选择的结构中，给每个位置(x,y)确定单元结构的尺寸和旋转角度
+            #找到数组phi_x_unit_cell中最接近phi_x的元素的索引
+            absolute_diff = np.abs(Phase_x_metalens - phi_x)  # 计算每个元素与phi_x的绝对差
+            closest_index = np.argmin(absolute_diff)  # 找到最小差值的索引
+            #提取相应的长和宽
+            L = L_metalens[closest_index]
+            W = W_metalens[closest_index]
+            
+            # x, y vertices of box of size (L, W) centered at the origin
+            vertices_origin = np.array([[+L / 2, +W / 2], [-L / 2, +W / 2], [-L / 2, -W / 2], [+L / 2, -W / 2]])
+
+            # 2x2 rotation matrix angle `angle` with respect to x axis
+            rotation_matrix = np.array([[+np.cos(theta), -np.sin(theta)], [+np.sin(theta), +np.cos(theta)]])
+            
+            # rotate the origin vertices by this angle，矩阵相乘
+            vertices_rotated = np.einsum("ij, jk -> ik", vertices_origin, rotation_matrix)
+            
+            # shift the rotated vertices to be centered at (x, y)
+            vertices_shifted = vertices_rotated + [x, y]
+            
+            metalens_geometry.append(
+                td.PolySlab(
+                    vertices=vertices_shifted,
+                    slab_bounds=( 0,  h),
+                    axis=2,
+                ),
+            )         
+metalens = td.Structure(geometry=td.GeometryGroup(geometries=metalens_geometry), medium=Si)
