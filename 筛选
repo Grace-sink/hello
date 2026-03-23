@@ -1,0 +1,50 @@
+#根据条件1和2挑选出符合的单元结构   
+#透射系数的最小阈值
+T_threshold = 0.85
+#phi_x-phi_y之差与pi的差值的最大阈值
+Phase_diff_threshold = 0.2
+
+Phase_x_selected = []
+Phase_y_selected = []
+Transmittance_x_selected = []
+Transmittance_y_selected = []
+L_selected = []
+W_selected = []
+for i,L in enumerate(L_list):
+    for j, W in enumerate(W_list):
+        if Transmittance_x[i][j] >= T_threshold and Transmittance_y[i][j] >= T_threshold: #条件1透射率应大于下限
+            phase_diff = np.abs(Phase_x[i][j] - Phase_y[i][j])#phix和phiy的绝对值之差为pi
+            if np.abs(phase_diff-np.pi) <= Phase_diff_threshold: #条件2位相差与应接近pi
+                L_selected.append(L)
+                W_selected.append(W)
+                Phase_x_selected.append(Phase_x[i][j])
+                Phase_y_selected.append(Phase_y[i][j])
+                Transmittance_x_selected.append(Transmittance_x[i][j])
+                Transmittance_y_selected.append(Transmittance_y[i][j])
+print(L_selected,W_selected,Phase_x_selected,Phase_y_selected,Transmittance_x_selected,Transmittance_y_selected)  
+
+#在满足条件1和2的所有结构中找到能实现所需要的单元结构
+#定义所需要的单元结构个数来实现0到2pi的位相梯度
+No_str = 3
+phase_interval = 2 * np.pi / (No_str-1) 
+
+Phase_x_metalens = []
+Phase_y_metalens = []
+Transmittance_x_metalens = []
+Transmittance_y_metalens = []
+L_metalens = []
+W_metalens = []
+for k in range(No_str):
+    #找到数组Transmittance_x中最接近T_min的元素的索引
+    absolute_diff = np.abs(np.array(Phase_x_selected) - k * phase_interval)  # 计算每个元素与phi_x的绝对差，np.array将列表变换成数组类型才能与后面数相减
+    closest_index = np.argmin(absolute_diff)  # 找到最小差值的索引
+    L_metalens.append(L_selected[closest_index])
+    W_metalens.append(W_selected[closest_index])
+    Phase_x_metalens.append(np.array(Phase_x_selected[closest_index]))
+    Phase_y_metalens.append(np.array(Phase_y_selected[closest_index]))
+    Transmittance_x_metalens.append(np.array(Transmittance_x_selected[closest_index]))
+    Transmittance_y_metalens.append(np.array(Transmittance_y_selected[closest_index]))
+print(f"L_metalens={L_metalens}\nW_metalens={W_metalens}\n"
+      f"Phase_x_metalens={Phase_x_metalens}\n"f"Phase_y_metalens={Phase_y_metalens}\n"
+      f"Transmittance_x_metalens={Transmittance_x_metalens}\n"
+      f"Transmittance_y_metalens={Transmittance_y_metalens}") 
