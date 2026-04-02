@@ -1,0 +1,202 @@
+clear;
+selectall;
+delete;
+nm=1e-9;#纳米单位
+um=1e-6;#微米单位
+#设置基本参数
+lens_radius = 135*um;
+side_length=270*um;
+wavelength = 8*um; 
+lm = -2;
+ln = 1;
+f_L = 150*um;
+f_R = 250*um;
+P=4.5*um;
+height=8*um;
+
+N = floor(side_length / P); 
+length_xy = N * P; 
+print("Diameter: " + num2str(side_length/um) + " um"); 
+print("Cells per side: " + num2str(N));
+
+#对应数组
+# ==============================================================================
+# 单元结构数据库 (Look-up Table)
+
+L_metalens = [2.235443e-06, 1.805063e-06, 1.762025e-06, 2.837975e-06, 6.000000e-07, 7.721519e-07, 1.245570e-06, 1.245570e-06, 2.665823e-06, 2.837975e-06, 2.235443e-06];
+
+W_metalens = [8.151899e-07, 1.245570e-06, 1.288608e-06, 2.665823e-06, 2.837975e-06, 2.321519e-06, 1.805063e-06, 1.848101e-06, 2.837975e-06, 6.000000e-07, 8.151899e-07];
+
+Phase_x_metalens = [3.020723, -2.095310, -1.835553, -1.605347, -0.397394, -0.002023, 1.130602, 1.238876, 1.405289, 2.739961, 3.020723];
+
+addcircle; # substrate
+set("name","BaF2");#名称
+set("index",1.396); #设置折射率 
+set("x",0);
+set("y",0);
+set("z max",0);
+set("z min",-1.5*um);
+set("radius",lens_radius+1.5*wavelength);
+n=0;
+
+addstructuregroup;
+set("name", "metalens_structure");
+set("x", 0); set("y", 0); set("z", 0);
+
+# 定义坐标网格
+r_vec = linspace(-length_xy/2 + P/2, length_xy/2 - P/2, N);
+# 关闭图形更新以加快构建速度
+redrawoff;
+# 嵌套循环生成结构
+for(i=1:length(r_vec)) {
+x = r_vec(i);
+for(j=1:length(r_vec)) {
+y = r_vec(j);
+# 圆形区域掩模
+if (x^2 + y^2 <= (length_xy/2)^2) {
+# --- 计算相位 (phixandtheta 函数逻辑) ---
+# --- 计算完美涡旋 (POV) 相位 ---
+r = sqrt(x^2 + y^2);
+theta_angle = atan2(y, x);
+        
+# 1. 计算 LCP 目标相位 (POV)
+r0_L = 20*um; # 设定的 LCP 完美涡旋亮环半径
+NA_ax_L = r0_L / f_L; # 等效锥形透镜的数值孔径
+        
+axicon_L = -2 * pi * NA_ax_L * r / wavelength;
+lens_L = -2 * pi * (sqrt(r^2 + f_L^2) - f_L) / wavelength;
+vortex_L = lm * theta_angle;
+phi_LCP = mod(axicon_L + lens_L + vortex_L, 2*pi);
+        
+# 2. 计算 RCP 目标相位 (POV)
+r0_R = 30*um; # 设定的 RCP 完美涡旋亮环半径，可以和LCP不同
+NA_ax_R = r0_R / f_R;
+        
+axicon_R = -2 * pi * NA_ax_R * r / wavelength;
+lens_R = -2 * pi * (sqrt(r^2 + f_R^2) - f_R) / wavelength;
+vortex_R = ln * theta_angle;
+phi_RCP = mod(axicon_R + lens_R + vortex_R, 2*pi);
+# 3. 计算传输相位 (phi_x) 和 旋转角 (theta)
+phi_target = mod((phi_LCP + phi_RCP) / 2, 2*pi);
+theta_target = (phi_LCP - phi_RCP) / 4;
+# --- 查找最匹配的单元结构 ---
+# 对应 Python: np.argmin(np.abs(Phase_x_metalens - phi_x))
+diff_arr = abs(Phase_x_metalens - phi_target);
+idx_list = find(diff_arr == min(diff_arr));
+best_idx = idx_list(1); # 取第一个匹配的索引
+L_opt = L_metalens(best_idx);
+W_opt = W_metalens(best_idx);
+# --- 在 FDTD 中添加矩形 ---
+addrect;
+set("name", "cell_" + num2str(i) + "_" + num2str(j));
+set("index",3.48);
+set("x", x);
+set("y", y);
+set("z min", 0); set("z max", height);
+set("x span", L_opt);
+set("y span", W_opt);
+#set("material", "Si (Silicon) - Palik");
+# 旋转结构 (theta)
+# Lumerical 中旋转通常是逆时针，单位是度(degrees)
+# Python 代码算出的 theta 是弧度，需要转换
+set("first axis", "z");
+set("rotation 1", theta_target * 180 / pi);
+# 将该对象添加到组中
+addtogroup("metalens_structure");
+}
+}
+}
+redrawon; # 恢复图形更新
+
+Lx = side_length + wavelength;
+Ly = side_length +wavelength;
+Lz_sim = height + 1.5 * wavelength; 
+
+addfdtd;
+set("x", 0); set("x span", Lx);
+set("y", 0); set("y span", Ly);
+set("z", Lz_sim/2 - wavelength/2); set("z span", Lz_sim);
+set("mesh accuracy", 2); # 初始网格设置
+set("dimension", "3D");
+# 边界条件 (PML)
+set("x min bc", "PML"); set("x max bc", "PML");
+set("y min bc", "PML"); set("y max bc", "PML");
+set("z min bc", "PML"); set("z max bc", "PML");
+
+# --- 自定义网格覆盖 (Mesh Override) ---
+# 对应 Python: dl=30nm (xy), dl=50nm (z)
+addmesh;
+set("name", "fine_mesh");
+set("x", 0); set("x span", Lx);
+set("y", 0); set("y span", Ly);
+set("z", height/2); set("z span", height +1*um); # 覆盖结构区域
+set("dx", 300*nm);
+set("dy", 300*nm);
+set("dz", 100*nm);
+
+##############################################################################
+# 5. 光源设置 (左旋圆偏振光 LCP)
+
+# Source X: 偏振角 0, 相位 0
+addplane;
+z_plane=0;
+set("name", "source_x");
+set("injection axis", "z");
+set("direction", "forward");
+set("x", 0); set("x span", Lx);
+set("y", 0); set("y span", Ly);
+set("z", z_plane); 
+set("wavelength start", wavelength);
+set("wavelength stop",wavelength); 
+set("polarization angle", 0);
+set("phase", 0);
+
+# Source Y: 偏振角 90, 相位 -90度 (-pi/2)
+addplane;
+set("name", "source_y");
+set("injection axis", "z");
+set("direction", "forward");
+set("x", 0); set("x span", Lx);
+set("y", 0); set("y span", Ly);
+set("z", z_plane);
+set("wavelength start",wavelength );
+set("wavelength stop", wavelength);
+set("polarization angle", 90);
+set("phase", -90); 
+
+# 6. 监视器 (Monitors)
+##############################################################################
+
+# 6.1 XZ 截面监视器 (对应 monitor_xz)
+# 注意：如果 FDTD Z 方向不够长，这个监视器会被截断。
+# 原代码里 sim_xz 把 Z 开得很大。在 FDTD 中通常为了省时间，Z 开小，用远场投影。
+# 这里仅设置位于 FDTD 区域内的部分。
+addprofile;
+set("name", "monitor_xz");
+set("monitor type", "2D X-normal"); # 注意：原代码是 y=0 平面 (xz平面)
+set("x", 0); set("y span", Lx);
+set("y", 0); 
+set("z", 0); set("z span", Lz_sim); # 只能监测仿真区域内的
+
+# 6.2 近场监视器 (用于远场投影, 对应 monitor_proj)
+# 放置在结构上方
+proj_z_loc = height + 0.1 * wavelength; # 放在 PML 之前，结构之后
+
+addpower;
+set("name", "monitor_near_field");
+set("monitor type", "2D Z-normal");
+set("x", 0); set("x span", Lx);
+set("y", 0); set("y span", Ly);
+set("z", proj_z_loc);
+set("override global monitor settings", 1);
+set("frequency points", 1); 
+run;
+
+##############################################################################
+
+
+
+
+
+
+
