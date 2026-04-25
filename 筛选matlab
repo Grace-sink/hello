@@ -1,0 +1,107 @@
+clc;
+clear all;
+close all;
+load('data10um.mat');
+% 利用对称性生成 Y 偏振数据
+% 根据对称性：T_y(W, L) = T_x(L, W)
+% 在矩阵层面，这意味着 T_y 是 T_x 的转置。
+% 生成 Y 偏振透射率 (T_y)
+% T 是一个矩阵，行对应 width1，列对应 length1
+T_y = T.'; 
+% 生成 Y 偏振相位 (phi_y)
+% 注意：phi_x 是一个矩阵，行对应 width1，列对应 length1
+phi_y = phi_x.';
+% 根据条件1和2挑选出符合的单元结构   
+% 透射系数的最小阈值
+T_threshold = 0.8;
+% phi_x-phi_y之差与pi的差值的最大阈值
+Phase_diff_threshold = 0.2;
+
+Phase_x_selected = [];
+Phase_y_selected = [];
+Transmittance_x_selected = [];
+Transmittance_y_selected = [];
+L_selected = [];
+W_selected = [];
+% 获取列表长度
+num_L = length(length1);
+num_W = length(width1);
+
+
+for i = 1:num_W
+    W =width1(i);
+    for j = 1:num_L
+        L = length1(j);
+        
+        % 条件1：透射率应大于下限
+        % 注意：MATLAB索引使用 (i,j)
+        if T(i,j) >= T_threshold && T_y(i,j) >= T_threshold
+            
+            % 计算相位差
+            phase_diff = abs(phi_x(i,j) - phi_y(i,j)); % phix和phiy的绝对值之差
+            
+            % 条件2：位相差应接近pi
+            if abs(phase_diff - pi) <= Phase_diff_threshold
+                L_selected = [L_selected, L];
+                W_selected = [W_selected, W];
+                Phase_x_selected = [Phase_x_selected, phi_x(i,j)];
+                Phase_y_selected = [Phase_y_selected, phi_y(i,j)];
+                Transmittance_x_selected = [Transmittance_x_selected, T(i,j)];
+                Transmittance_y_selected = [Transmittance_y_selected, T_y(i,j)];
+            end
+        end
+    end
+end
+
+% 打印筛选结果
+disp('Selected Structures:');
+disp(['L: ', num2str(L_selected)]);
+disp(['W: ', num2str(W_selected)]);
+disp(['Phase_x: ', num2str(Phase_x_selected)]);
+% 如果数据量太大，建议不要直接打印整个数组，或者使用 transpose (.') 查看列向量
+
+% ---------------------------------------------------------
+% 在满足条件1和2的所有结构中找到能实现所需要的单元结构
+% ---------------------------------------------------------
+
+% 定义所需要的单元结构个数来实现0到2pi的位相梯度
+No_str = 11;
+target_phases_list = linspace(-pi, pi, No_str);
+%phase_interval = 2 * pi / (No_str - 1); 
+
+Phase_x_metalens = [];
+Phase_y_metalens = [];
+Transmittance_x_metalens = [];
+Transmittance_y_metalens = [];
+L_metalens = [];
+W_metalens = [];
+% Python range(No_str) 生成 0, 1, ... No_str-1
+for k = 1:No_str
+    % 获取当前的目标相位 (从列表里取)
+    target_phase = target_phases_list(k);
+    
+    % 在比较相位时，直接相减可能会有问题（例如 -3.14 和 +3.14 其实是同一个相位）。
+    % 使用 angle(exp(1i * (A - B))) 是计算相位差最准确的方法，能自动处理 2pi 周期性。
+    
+    phase_difference = angle(exp(1i * (Phase_x_selected - target_phase)));
+    absolute_diff = abs(phase_difference);
+    
+    % 找到最小差值的索引
+    [min_val, closest_index] = min(absolute_diff);
+    
+    % 将找到的值添加到结果数组中
+    L_metalens = [L_metalens, L_selected(closest_index)];
+    W_metalens = [W_metalens, W_selected(closest_index)];
+    Phase_x_metalens = [Phase_x_metalens, Phase_x_selected(closest_index)];
+    Phase_y_metalens = [Phase_y_metalens, Phase_y_selected(closest_index)];
+    Transmittance_x_metalens = [Transmittance_x_metalens, Transmittance_x_selected(closest_index)];
+    Transmittance_y_metalens = [Transmittance_y_metalens, Transmittance_y_selected(closest_index)];
+end
+
+% 打印最终 Metalens 结果
+fprintf('L_metalens = %s\n', mat2str(L_metalens));
+fprintf('W_metalens = %s\n', mat2str(W_metalens));
+fprintf('Phase_x_metalens = %s\n', mat2str(Phase_x_metalens));
+fprintf('Phase_y_metalens = %s\n', mat2str(Phase_y_metalens));
+fprintf('Transmittance_x_metalens = %s\n', mat2str(Transmittance_x_metalens));
+fprintf('Transmittance_y_metalens = %s\n', mat2str(Transmittance_y_metalens));
